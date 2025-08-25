@@ -180,7 +180,6 @@ def change_contact(args, book: AddressBook):
     save_data(book)
     return "Contact updated."
 
-
 @input_error
 def show_phone(args, book: AddressBook):
     name, *_ = args
@@ -261,12 +260,16 @@ def main():
 
         elif command == "all":
             print(show_all(book))
+
         elif command == "add-birthday":
             print(add_birthday(args, book))
+
         elif command == "show-birthday":
             print(show_birthday(args, book))
+
         elif command == "birthdays":
             print(birthdays(args, book))
+
         else:
             print("Invalid command.")
 
