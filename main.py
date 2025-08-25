@@ -166,6 +166,7 @@ def add_contact(args, book: AddressBook):
     else:
         message = "Contact updated"
     record.add_phone(phone)
+    save_data(book)
     return message
 
 
@@ -176,6 +177,7 @@ def change_contact(args, book: AddressBook):
     if record is None:
         raise ValueError("Contact not found.")
     record.edit_phone(old_phone, new_phone)
+    save_data(book)
     return "Contact updated."
 
 
@@ -203,6 +205,7 @@ def add_birthday(args, book: AddressBook):
     if record is None:
         raise ValueError("Contact not found")
     record.add_birthday(date_str)
+    save_data(book)
     return "Birthday added"
 
 
