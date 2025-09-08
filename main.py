@@ -1,10 +1,11 @@
-import pickle
 from collections import UserDict
 from datetime import datetime, date, timedelta
+from abc import ABC, abstractmethod
+import pickle
 
 def save_data(book, filename='addressbook.pkl'):
-        with open(filename, 'wb') as f:    
-            pickle.dump(book, f)
+    with open(filename, 'wb') as f:
+        pickle.dump(book, f)
 
 def load_data(filename='addressbook.pkl'):
     try:
@@ -16,21 +17,17 @@ def load_data(filename='addressbook.pkl'):
 class Field:
     def __init__(self, value):
         self.value = value
-
     def __str__(self):
         return str(self.value)
 
-
 class Name(Field):
     pass
-
 
 class Phone(Field):
     def __init__(self, value):
         if not value.isdigit() or len(value) != 10:
             raise ValueError("Phone number must be exactly 10 digits.")
         super().__init__(value)
-
 
 class Birthday(Field):
     def __init__(self, value):
@@ -39,7 +36,6 @@ class Birthday(Field):
         except ValueError:
             raise ValueError("Invalid date format. Use DD.MM.YYYY")
         super().__init__(value)
-
 
 class Record:
     def __init__(self, name):
@@ -78,7 +74,6 @@ class Record:
     def add_birthday(self, date_str: str):
         self.birthday = Birthday(date_str)
 
-
 class AddressBook(UserDict):
     def add_record(self, record: Record):
         self.data[record.name.value] = record
@@ -91,7 +86,7 @@ class AddressBook(UserDict):
             del self.data[name]
         else:
             raise KeyError("Contact not found.")
-        
+
     def get_upcoming_birthdays(self, days: int = 7):
         today = date.today()
         window = days - 1
@@ -128,24 +123,107 @@ class AddressBook(UserDict):
     def __str__(self):
         return "\n".join(str(record) for record in self.data.values())
 
+class UserView(ABC):
+    @abstractmethod
+    def render_welcome(self): ...
+    @abstractmethod
+    def render_prompt(self): ...
+    @abstractmethod
+    def render_message(self, text): ...
+    @abstractmethod
+    def render_error(self, text): ...
+    @abstractmethod
+    def render_contact(self, record): ...
+    @abstractmethod
+    def render_contacts(self, records): ...
+    @abstractmethod
+    def render_help(self, commands): ...
+    @abstractmethod
+    def render_upcoming_birthdays(self, items): ...
+    @abstractmethod
+    def render_goodbye(self): ...
+    @abstractmethod
+    def read_command(self): ...
+
+class ConsoleView(UserView):
+    def render_welcome(self):
+        print("Welcome to the assistant bot! Type 'help' to see commands.")
+
+    def render_prompt(self):
+        print("Enter a command: ", end="", flush=True)
+
+    def render_message(self, text):
+        print(text)
+
+    def render_error(self, text):
+        print(f"Error: {text}")
+
+    def render_contact(self, record: Record):
+        name = record.name.value
+        phones = ";".join(p.value for p in record.phones) if record.phones else "—"
+        bd = record.birthday.value if record.birthday else "—"
+        print("Contact")
+        print(f"- name: {name}")
+        print(f"- phones: {phones}")
+        print(f"- birthday: {bd}")
+
+    def render_contacts(self, records):
+        if not records:
+            print("No contacts found.")
+            return
+        for i, rec in enumerate(records, start=1):
+            name = rec.name.value
+            phones = ";".join(p.value for p in rec.phones) if rec.phones else "—"
+            bd = rec.birthday.value if rec.birthday else "—"
+            print(f"{i}) {name} — {phones} — {bd}")
+
+    def render_help(self, commands: dict):
+        print("Available commands:")
+        width = max(len(cmd) for cmd in commands.keys())
+        for cmd, info in commands.items():
+            desc = info.get("desc", "")
+            ex = info.get("example", "")
+            line = f"- {cmd.ljust(width)} — {desc}"
+            if ex:
+                line += f" | e.g. {ex}"
+            print(line)
+
+    def render_upcoming_birthdays(self, items):
+        if not items:
+            print("No upcoming birthdays.")
+            return
+        groups = {}
+        for it in items:
+            groups.setdefault(it["birthday"], []).append(it["name"])
+        print("Upcoming birthdays (next 7 days):")
+        for d in sorted(groups.keys(), key=lambda k: datetime.strptime(k, "%d.%m.%Y")):
+            print(f"{d}: {', '.join(groups[d])}")
+
+    def render_goodbye(self):
+        print("Good bye!")
+
+    def read_command(self):
+        self.render_prompt()
+        return input()
 
 def input_error(func):
     def inner(*args, **kwargs):
         try:
             return func(*args, **kwargs)
         except ValueError as e:
-            return str(e) if str(e) else "Value error."
+            msg = str(e) if str(e) else "Value error."
+            return ("ERROR", msg)
         except KeyError as e:
-            return str(e) if str(e) else "Enter user name."
+            msg = str(e) if str(e) else "Enter user name."
+            return ("ERROR", msg)
         except IndexError:
-            return "Not enough arguments."
+            return ("ERROR", "Not enough arguments.")
         except AttributeError:
-            return "Contact not found"
+            return ("ERROR", "Contact not found")
         except TypeError as e:
-            return str(e) if str(e) else "Type error"
-
+            msg = str(e) if str(e) else "Type error"
+            return ("ERROR", msg)
     return inner
-
 
 def parse_input(user_input):
     parts = user_input.strip().split()
@@ -153,7 +231,6 @@ def parse_input(user_input):
         return "", []
     cmd, *args = parts
     return cmd.lower(), args
-
 
 @input_error
 def add_contact(args, book: AddressBook):
@@ -164,11 +241,10 @@ def add_contact(args, book: AddressBook):
         book.add_record(record)
         message = "Contact added."
     else:
-        message = "Contact updated"
+        message = "Contact updated."
     record.add_phone(phone)
     save_data(book)
-    return message
-
+    return ("OK", message)
 
 @input_error
 def change_contact(args, book: AddressBook):
@@ -178,7 +254,7 @@ def change_contact(args, book: AddressBook):
         raise ValueError("Contact not found.")
     record.edit_phone(old_phone, new_phone)
     save_data(book)
-    return "Contact updated."
+    return ("OK", "Contact updated.")
 
 @input_error
 def show_phone(args, book: AddressBook):
@@ -187,15 +263,13 @@ def show_phone(args, book: AddressBook):
     if record is None:
         raise ValueError("Contact not found.")
     if not record.phones:
-        return "No phones for this contact."
-    return ";".join(p.value for p in record.phones)
-
+        return ("OK", "No phones for this contact.")
+    return ("OK", ";".join(p.value for p in record.phones))
 
 def show_all(book: AddressBook):
     if not book.data:
-        return "No contacts found."
-    return "\n".join(str(record) for record in book.data.values())
-
+        return ("OK", "No contacts found.")
+    return ("MANY_CONTACTS", list(book.data.values()))
 
 @input_error
 def add_birthday(args, book: AddressBook):
@@ -205,8 +279,7 @@ def add_birthday(args, book: AddressBook):
         raise ValueError("Contact not found")
     record.add_birthday(date_str)
     save_data(book)
-    return "Birthday added"
-
+    return ("OK", "Birthday added.")
 
 @input_error
 def show_birthday(args, book: AddressBook):
@@ -215,64 +288,102 @@ def show_birthday(args, book: AddressBook):
     if record is None:
         raise ValueError("Contact not found")
     if not record.birthday:
-        return "No birthday set"
-    return record.birthday.value
-
+        return ("OK", "No birthday set.")
+    return ("OK", record.birthday.value)
 
 @input_error
 def birthdays(_, book: AddressBook):
     items = book.get_upcoming_birthdays()
-    if not items:
-        return "No upcoming birthdays."
-    groups = {}
-    for it in items:
-        groups.setdefault(it["birthday"], []).append(it["name"])
-    ordered = sorted(
-        groups.items(), key=lambda kv: datetime.strptime(kv[0], "%d.%m.%Y")
-    )
-    lines = [f'{d}: {", ".join(names)}' for d, names in ordered]
-    return "\n".join(lines)
+    return ("UPCOMING_BIRTHDAYS", items)
 
+def help_info():
+    return ("HELP", {
+        "hello": {"desc": "Greet the assistant"},
+        "add <name> <phone>": {
+            "desc": "Add phone to contact (create if not exists)",
+            "example": "add Alice 0501234567",
+        },
+        "change <name> <old> <new>": {
+            "desc": "Replace a phone number",
+            "example": "change Alice 0501234567 0937654321",
+        },
+        "phone <name>": {
+            "desc": "Show all phones for a contact",
+            "example": "phone Alice",
+        },
+        "all": {"desc": "Show all contacts"},
+        "add-birthday <name> <DD.MM.YYYY>": {
+            "desc": "Set birthday for a contact",
+            "example": "add-birthday Alice 14.03.1990",
+        },
+        "show-birthday <name>": {
+            "desc": "Show contact's birthday",
+            "example": "show-birthday Alice",
+        },
+        "birthdays": {"desc": "Upcoming birthdays for the next 7 days"},
+        "help": {"desc": "Show this help"},
+        "close | exit": {"desc": "Exit the program"},
+    })
 
 def main():
     book = load_data()
-    print("Welcome to the assistant bot!")
+    view = ConsoleView()
+    view.render_welcome()
+
     while True:
-        user_input = input("Enter a command: ")
-        command, args = parse_input(user_input)
+        raw = view.read_command()
+        command, args = parse_input(raw)
 
         if command in ["close", "exit"]:
-            print("Good bye!")
+            view.render_goodbye()
             save_data(book)
             break
 
         elif command == "hello":
-            print("How can I help you?")
+            view.render_message("How can I help you?")
+
+        elif command == "help":
+            tag, payload = help_info()
+            view.render_help(payload)
 
         elif command == "add":
-            print(add_contact(args, book))
+            tag, payload = add_contact(args, book)
+            view.render_message(payload) if tag == "OK" else view.render_error(payload)
 
         elif command == "change":
-            print(change_contact(args, book))
+            tag, payload = change_contact(args, book)
+            view.render_message(payload) if tag == "OK" else view.render_error(payload)
 
         elif command == "phone":
-            print(show_phone(args, book))
+            tag, payload = show_phone(args, book)
+            view.render_message(payload) if tag == "OK" else view.render_error(payload)
 
         elif command == "all":
-            print(show_all(book))
+            tag, payload = show_all(book)
+            if tag == "MANY_CONTACTS":
+                view.render_contacts(payload)
+            elif tag == "OK":
+                view.render_message(payload)
+            else:
+                view.render_error(payload)
 
         elif command == "add-birthday":
-            print(add_birthday(args, book))
+            tag, payload = add_birthday(args, book)
+            view.render_message(payload) if tag == "OK" else view.render_error(payload)
 
         elif command == "show-birthday":
-            print(show_birthday(args, book))
+            tag, payload = show_birthday(args, book)
+            view.render_message(payload) if tag == "OK" else view.render_error(payload)
 
         elif command == "birthdays":
-            print(birthdays(args, book))
+            tag, payload = birthdays(args, book)
+            view.render_upcoming_birthdays(payload) if tag == "UPCOMING_BIRTHDAYS" else view.render_error(payload)
+
+        elif command == "":
+            continue
 
         else:
-            print("Invalid command.")
-
+            view.render_error("Invalid command.")
 
 if __name__ == "__main__":
     main()
